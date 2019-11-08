@@ -17,7 +17,12 @@ X = sc.fit_transform(X)
 
 # Training the SOM
 from minisom import MiniSom
-som = MiniSom(x = 10, y = 10, input_len = 15, sigma = 1.0, learning_rate = 0.5)
+
+rows = 10
+cols = 10
+
+
+som = MiniSom(x=rows, y=cols, input_len=15, sigma=1.0, learning_rate=0.5)
 som.random_weights_init(X)
 som.train_random(data = X, num_iteration = 100)
 
@@ -39,10 +44,38 @@ for i, x in enumerate(X):
 show()
 
 # Finding the frauds
-mappings = som.win_map(X)
-frauds = np.concatenate((mappings[(5,9)], mappings[(1,6)]), axis = 0)
-frauds = sc.inverse_transform(frauds)
+# Get the customers that are likely to defraud the bank (potential cheaters)
+# Add indices to SOM values & sort by value
+helper = np.concatenate(
+    (som.distance_map().reshape(rows*cols, 1),         # the SOM map values
+     np.arange(rows*cols).reshape(rows*cols, 1)),      # concatenated with an index
+    axis=1)                                            # as a 2D matrix with 2 columns of data
+helper = helper[helper[:, 0].argsort()][::-1]          # sort by first column (map values) and reverse (so top values are first)
 
+use_threshold = True   # toggle usage for calculating indices (pick cells that exceed threshold or use hardcoded number of cells)
+top_cells = 4          # number of outliers to consider. it might be chosen after inspecting the current SOM plot
+threshold = 0.8        # Use threshold to select top cells
+# Take indices that correspond to cells we're interested in
+idx = helper[helper[:, 0] > threshold, 1] if use_threshold else helper[:top_cells, 1]
+# Find the data entries assigned to cells corresponding to the selected indices
+result_map = []
+mappings = som.win_map(X)
+for i in range(rows):
+    for j in range(cols):
+        if (i*rows+j) in idx:
+            if len(result_map) == 0:                
+                result_map = mappings[(i,j)]
+            else:
+                # Sometimes a cell contains no observations (customers)... weird
+                # This will cause numpy to raise an exception so guard against that!
+                if len(mappings[(i,j)]) > 0:
+                    result_map = np.concatenate((result_map, mappings[(i,j)]), axis=0)                
+ 
+# finally we get our fraudster candidates
+frauds = sc.inverse_transform(result_map)
+ 
+# This is the list of potential cheaters (customer ids)
+print(frauds[:, 0])
 
 
 # Part 2 - Going from Unsupervised to Supervised Deep Learning
